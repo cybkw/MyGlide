@@ -1,0 +1,22 @@
+Value类对象，使用单例模式封装。
+作用：对Bitmap资源的封装。
+成员变量：
+String key-资源的唯一标识，也就是图片资源地址被处理过后的值（如SHA256处理后：SHH1U212HA61HAHAKJ121）
+Bitmap bitmap-图片bitmap资源对象。
+int count-图片使用次数。
+ValueCallback -告知外界图片使用情况的接口。
+
+public void useCount() 方法详解：
+资源每使用一次，count进行+1处理，注意判断bitmap是否回收。
+
+public void subCount()  方法详解：
+资源使用完成，进行count-1处理。
+当count<=0时，表示该资源将不再使用，调用valueNonUseListener回调方法。
+
+public void recycleBitmap() 方法详解：
+释放bitmap。
+内部将Value置为空null。注意判断(count>0)是否正在使用。
+
+
+
+

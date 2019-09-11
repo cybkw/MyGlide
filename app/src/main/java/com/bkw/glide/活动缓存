@@ -1,0 +1,58 @@
+2.活动缓存
+职责：存储正在使用的资源，弱引用。
+
+2.1 回收机制：GC扫描的时候回收，从容器中移除（GC被动移除） （弱引用）
+2.2 管理方式：资源的封装 Key -----（弱引用Value，将Value包装弱引用）
+2.3 手动移除的区分： isUserRemove 为了区分手动移除和GC被动移除
+2.4 关闭循环线程 isCloseThread
+2.5 加入ValueCallback监听
+
+
+Value对象详解：
+
+
+private Map<String, WeakReference<Value>> cacheMap = new HashMap<>();
+保存将Value包装成弱引用对象的缓存集合。
+
+public ActivieCache(ValueCallback valueCallback)构造方法详解：
+参数为ValueCallback监听接口，目的将Value的使用情况告知外界。
+添加Value时将ValueCallback监听接口与Value进行绑定。
+
+public ValueWeakReference(Value referent, ReferenceQueue<? super Value> queue, String key) 方法详解:
+将Value对象包装为弱引用对象，使用两个参数的构造方法，这里第三个参数key是自定义加入的，目的是传入对应Value的key.
+就是为了监听gc被动回收时能得到对应弱引用的key。
+
+
+private ReferenceQueue<Value> getQueue()方法详解:
+这个方法创建了一个循环子线程，目的就是为了监听到当发生gc操作时，queue.remove()会被调用。
+queue.remove()是一个阻塞方法（注：有活了就干，没活了就等着，并不是一直在执行remove的），能得到被回收的弱引用。
+将得到的弱引用强转为弱引用包装的Value对象，ValueWeakReference weak=(ValueWeakReference)remove;
+我们之前将key在构造方法中传给了ValueWeakReference。所以通过weak.key就能得到对应被回收的key。
+在容器Map中移除对应key-Value, cacheMap.remove(weak.key)。
+
+valueWeakReference.get()解释;
+表示返回该弱引用包装的真实对象。
+
+public Value remove(String key)方法详解：
+从缓存集合中移除对应Value。
+这里移除为什么还要返回这个对象？
+这里返回Value对象，只是为了告知开发者自己移除的是哪个对象。
+当前这操作是手动清除的, 清除了哪个key 那就把对应的Value拿出来, 只不过Value放了在弱引用里面存起来了而已,
+所以拿出来之后再get一下 就拿到真正的Value, 也就是bitmap对象了。
+
+isCloseThread变量：
+为了控制关闭循环线程，也就是getQueue()当中的while条件，调用closeThread方法时将isCloseThread=true,停止循环线程。
+
+isUserRemove变量：
+区分手动移除和GC被动移除，手动从容器中移除对应对象时，将isUserRemove值改为true,因为循环线程一直在跑，
+所以为了规避循环线程中的再次移除操作。
+手动移除完成后，再将isUserRemove的值改为false,不影响循环线程的被动回收操作。
+
+public void put(String key, Value value) 方法详解：
+将资源保存到缓存集合中。
+
+public Value get(String key) 方法详解：
+从缓存集合中获取Value对象。
+
+public void closeThread() 方法详解：
+停止线程循环。清空缓存集合，通知GC回收器。

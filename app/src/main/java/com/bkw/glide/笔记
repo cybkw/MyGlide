@@ -1,0 +1,249 @@
+1.资源封装
+Key :资源唯一标识
+Value: Bitmap的封装（使用+1，未在使用-1）
+ValueCallback: 将Value使用情况告知外界的接口
+
+
+2.活动缓存
+职责：存储正在使用的资源，弱引用。
+
+2.1 回收机制：GC扫描的时候回收，从容器中移除（GC被动移除） （弱引用）
+2.2 管理方式：资源的封装 Key -----（弱引用Value，将Value包装弱引用）
+2.3 手动移除的区分： isUserRemove 为了区分手动移除和GC被动移除
+2.4 关闭循环线程 isCloseThread
+2.5 加入ValueCallback监听
+
+public ActivieCache(ValueCallback valueCallback)构造方法详解：
+传入ValueCallback监听接口，目的将Value的使用情况告知外界。
+添加Value将ValueCallback监听接口与Value进行绑定。
+
+public ValueWeakReference(Value referent, ReferenceQueue<? super Value> queue, String key) 方法详解:
+将Value对象包装为弱引用对象，使用两个参数的构造方法，这里第三个参数key是自定义加入的，目的是传入对应Value的key.
+就是为了监听gc被动回收时能得到对应弱引用的key。
+
+
+getQueue()方法详解;
+这个方法创建了一个循环子线程，目的就是为了监听到当发生gc操作时，queue.remove()会被调用。
+queue.remove()是一个阻塞方法（注：有活了就干，没活了就等着，并不是一直在执行remove的），能得到被回收的弱引用。
+将得到的弱引用强转为弱引用包装的Value对象，ValueWeakReference weak=(ValueWeakReference)remove;
+我们之前将key在构造方法中传给了ValueWeakReference。所以通过weak.key就能得到对应被回收的key。
+在容器Map中移除对应key-Value, cacheMap.remove(weak.key)。
+
+valueWeakReference.get()解释;
+表示返回该弱引用包装的真实对象。
+
+public Value remove(String key)方法详解：
+这里移除为什么还要返回这个对象？
+这里返回Value对象，只是为了告知开发者自己移除的是哪个对象。
+当前这操作是手动清除的, 清除了哪个key 那就把对应的Value拿出来, 只不过Value放了在弱引用里面存起来了而已,
+所以拿出来之后再get一下 就拿到真正的Value, 也就是bitmap对象了。
+
+isCloseThread变量：
+为了控制关闭循环线程，也就是getQueue()当中的while条件，调用closeThread方法时将isCloseThread=true,停止循环线程。
+
+isUserRemove变量：
+区分手动移除和GC被动移除，手动从容器中移除对应对象时，将isUserRemove值改为true,因为循环线程一直在跑，
+所以为了规避循环线程中的再次移除操作。
+手动移除完成后，再将isUserRemove的值改为false,不影响循环线程的被动回收操作。
+
+3.内存缓存（LRU算法）
+职责：
+为第二次缓存服务，LRU算法。
+
+LRU算法： 最近最长时间没有使用的元素，会自动被移除。
+Lru算法-最少使用算法，当量达到限制值时，内存中最近最少使用的元素会被移除。
+如：内存限制五个元素大小。 当内存中已存在五个元素，当有新的元素（6）加入时，会将最近最少使用的元素移除掉。
+
+LruCache: V4包下
+利用LinkedHashMap<K,V> ,
+new LinkedHashMap<K, V>(0, 0.75f, true);
+LinkedHashMap：true==拥有访问排序的功能(最少使用算法-LRU算法)。
+
+put：
+1.如果是重复的key,会被移除掉一个
+key=1212111
+下一次put时previous=key=1212111.
+entryRemoved
+2.trimToSize 移除哪些最近没有使用的元素---》entryRemoved
+
+
+public class MemoryCache extends LruCache<String, Value> 详解
+为什么继承LruCache？
+就是为了使用Lru算法的方法，方便我们使用且可控。
+
+
+public void setMemoryCacheCallback(MemoryCacheCallback memoryCacheCallback)方法详解：
+元素移除的回调接口。将被移除的key和Value告知外界。
+
+isUserRemove变量,默认为false：
+为了区分手动移除和被动移除。
+
+
+
+public Value userRemove(String key) 方法详解：
+手动移除。
+移除前isUserRemove=true;
+手动移除时调用的是父类的remove()方法，就是LruCache。
+移除后isUserRemove=false;
+调用这里最后会调用到entryRemoved方法。
+
+@Override
+protected void entryRemoved(boolean evicted, String key, Value oldValue, Value newValue) 方法详解：
+被动移除，属于LruCache的方法，当内存达到限制值时，会调用的方法。
+重复的key会被移除掉一个。
+最少使用的元素会被移除。
+
+
+4.磁盘缓存
+保存时效较久：保存在本地磁盘（不再是保存在运行内存中）。
+与内存缓存不同的是多出了一个将Value（Bitmap）保存在文件中的操作。
+回收机制：依然使用Lru最少使用算法回收。
+
+LruCache -- Android中提供了 V4包。
+DiskLruCache （面向磁盘缓存的工具API） -- Android API没有提供 使用JakeWharton的DiskLruCache。
+DiskLruCache的回收方式-Lru算法，LinkedHashMap访问排序
+写入的方式类似SharePreference首选项
+diskLruCahe.edit() 得到编辑器
+edit.newOutPutStream()写入数据
+
+
+5.生命周期
+拼接活动缓存、内存缓存、磁盘缓存。
+
+生命周期的管理： Application的生命周期无法控制，FragmentActivity或是Activity都有对应的生命周期方法，所以可管理。
+管理方式：在Activity组件上，附加Fragment,通过Fragment监听组件的生命周期。
+
+Fragment存在着不同包，以下：
+Activity--> android.app Fragment
+AppCompatActivity -->android.support.v4.app Fragment
+
+
+public RequestManager(Activity activity) {
+   mHandler.sendMessage();
+}
+为什么发送一次Handler?
+因为Android基于Handler传递消息，为了让fragment不再排队，为了取得fragment。
+移除Handler
+
+
+Glide.with(this)方法：
+此方法内部调用RequestManager类。
+为了更好的管理生命周期，this传递是上下文，Activity,FragmentActivity,Context等。
+this如果传递是Activity类型，那么就能得到activity引用的状态从而得知生命周期状态。
+而this如果传递是ApplicationContext,则无法管理生命周期，所以没做特别的处理。
+所以Glide监控页面生命周期的做法是在宿主的Activity之上创建一个Fragment,
+通过该Fragment 监听生命周期状态。
+这就是RequestManager类的主要工作。
+
+
+
+6.加载图片
+Glide加载图片资源的流程：从缓存策略（活动缓存，内存缓存，磁盘缓存）中寻找-->找不到，从网络下载，保存缓存-->显示图片
+
+课堂总结：
+第一次加载，从网络下载图片，保存到磁盘缓存中（sdcard/disk_lru_cache_dir/key）
+第二次加载:直接从活动缓存中加载资源， 第三次~第n次...都从活动缓存中找到了该资源。
+
+退出Activity，活动缓存释放，将释放的该图片资源加入到了内存缓存中，再次打开app,加载图片，在内存缓存中找到了资源并加载。
+
+完全退出程序，释放活动缓存，释放内存缓存。再次打开app,加载图片，从磁盘缓存中找到了该资源。
+
+
+---------------------------
+Lru算法小知识点：
+
+---------------------
+1.活动缓存，HashMap管理的，用到了弱引用去回收移除---活动缓存移除后交给内存缓存
+2.内存缓存，Lru算法+LinkedHashMap管理，LinkedHashMao拥有访问排序的功能
+3.磁盘缓存，最后一级缓存，将图片保存在手机，也有通过Lru算法进行管理，DiskLruCache。
+4.生命周期的管理，通过Fragment。
+----------------------------------
+
+RequestTargetEngine加载图片资源功能类，实现各级缓存策略接口以及外部资源加载接口。
+
+public void loadValueInitAction(String path, Context context)方法详解：
+这里将图片资源地址以及上下文传递给了RequestTargetEngine。
+在此方法内部对path进行了加密，也就是用Key类包装了path。
+
+
+RequestTargetEngine()构造方法：
+如加载流程-->活动缓存--》内存缓存--》磁盘缓存--》网络或SD卡。
+方法内部初始化各级缓存策略。
+
+注意：各级缓存策略相关的接口都实现在RequestTargetEngine中，且传递给目标缓存策略者。
+
+
+public void into(ImageView imageView)方法详解：
+开发者传递对应显示图片控件，且为发起图片加载的地方。
+方法内部对控件进行判空处理，以及判断是否为主线程，因为更新UI的操作需要在主线程。
+条件满足后，才开始加载操作。
+加载方法为cacheAction();
+
+
+private Value cacheAction() 加载图片资源方法详解：
+方法内部流程：
+第一步：从活动缓存中寻找该key对应的Value值，如找到，返回Value。否则继续。
+
+第二步：从内存缓存中寻找该key对应的Value值，如找到，返回Value。否则继续。
+
+第三步：从磁盘缓存中寻找该key对应的Value值，如找到，返回Value。否则将加载外部资源（通过网络或者SD卡）。
+注意：如在缓存中找到了对应Value,则需要对Value进行使用次数+1，value.useCount();
+
+第四步：从网络或SD卡中加载该资源。
+value = new GlideLoadDataManager().loadResource(path, this, context);
+
+
+private void saveCache(String key, Value value)方法详解：
+如外部资源加载成功后，需将图片资源保存到磁盘缓存中，以便下次使用。
+
+
+public void valueNonUseListener(String key, Value value)方法详解：
+此方法为Value通知外部Value使用情况的接口实现方法。
+作用是当某个资源在活动缓存中不再使用时，将该资源添加到内存缓存中。
+
+
+public void entryRemovedMemory(String key, Value value) 方法详解：
+此方法是内存缓存中最少使用的元素被移除时的回调接口实现方法。
+作用是将被移除的最少使用元素放入到复用池。
+
+
+
+
+----------------------------------------------------------
+GlideLoadDataManager加载外部资源功能类，实现接口Runnable。
+ResponseListener回调接口：外部资源加载成功或失败。
+
+loadResource(path,this,context) 方法详解：
+参数分别为：图片资源路径，图片加载回调，上下文。
+
+此方法内部对path进行解析，判断网络资源还是本地路径资源，
+对于网络资源，使用了缓存策略线程池的方式进行网络请求访问图片资源。
+注意：请求完成，切换回主线程，再调用网络图片成功回调接口方法。
+
+对于SD卡本地图片文件开发者自行读取直接返回Value。
+
+-------------------------------------
+直播：
+
+如加载三张图片，就会申请三次bitmap内存空间。
+bitmap申请内存空间多次的话会造成内存抖动或者内存碎片。
+
+复用池：
+不需要多次去申请内存空间，使用可复用的Bitmap内存空间。
+
+每个图片bitmap都有 宽*高*每个像素点 大小（N个方块组成。
+
+利用Lru的方式保存。
+
+复用的标准，必须满足，才能复用，复用bitmap的内存，避免频繁申请内存空间。
+1.isMutable==true。
+2.inBitmap=bitmapPoolResult; 等于null,代表不复用。
+
+复用池和内存缓存机制，没有直接关系。
+
+复用池，只是复用bitmap的申请内存空间而已。
+
+
+
+
+

@@ -1,0 +1,18 @@
+DiskLruCacheImpl-磁盘缓存，对DiskLruCache进行封装使用。
+DiskLruCache:JakeWhaton大神的库，也是使用Lru最少使用算法。
+成员变量：
+String DISK_CACHE_DIR:缓存目录。
+long MAX_SIZE = 1024 * 1024 * 10; 磁盘缓存最大值，可自定义。
+Integer VALUE_COUNT：通常情况都是1。
+int APP_VERSION ：版本号，一旦修改，之前的缓存全部失效。
+DiskLruCache diskLruCache：最少使用算法的磁盘缓存对象。
+
+public DiskLruCacheImpl()构造方法详解：
+方法内部主要是初始化diskLruCache.open(file,APP_VERSION,VALUE_COUNT,MAX_SIZE)方法。
+
+public void put(String key, Value value) 方法详解：
+方法内部实现得到DiskLruCache的编辑器Editor对象，且将Value的bitmap对象写入。
+
+public Value get(String key)方法详解：
+从磁盘缓存获取Value对象。
+内部实现从diskLruCache获取InputStream,将InputStream转为Bitmap对象，赋值给Value并返回。

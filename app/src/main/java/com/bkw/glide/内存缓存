@@ -1,0 +1,36 @@
+MemoryCache 内存缓存对象，继承LruCache对象，使用Lru最少使用算法
+保存从活动缓存中移除的对象。
+成员变量：
+MemoryCacheCallback memoryCacheCallback-最少使用元素被移除时的回调监听接口。
+boolean isUserRemove-是否为手动移除标识。
+
+public void setMemoryCacheCallback(MemoryCacheCallback memoryCacheCallback)方法详解：
+设置最少使用元素被移除时的回调接口。
+
+protected int sizeOf(String key, Value value)方法详解：
+LruCache的方法重写。
+方法内部主要是获取Value的bitmap大小。
+//获取Bitmap的大小，不同版本API获取的方式。 在Bitmap内存复用方式有区别
+//最开始时使用
+//int result = bitmap.getRowBytes() * bitmap.getHeight();
+
+//后续时 API-11 3.0使用
+//result = bitmap.getByteCount();
+
+//API-19 4.4 使用native方法
+//result= bitmap.getAllocationByteCount();
+
+
+public Value userRemove(String key) 方法详解：
+手动移除，方法内部调用的是LruCache类的remove方法，
+手动移除后将标识改为true,当系统移除最少使用元素时就会自动调用entryRemoved()方法。
+isUserRemove=false;
+remove(Value);
+isUserRemove=true;
+
+protected void entryRemoved(boolean evicted, String key, Value oldValue, Value newValue)方法详解：
+LruCache对象的方法，发生被动移除时调用的方法，自身的两个作用如下：
+1.重复的key移除掉一个。
+2.最少使用的元素会被移除。
+我们在内部判断如果为手动移除发生时，调用MemoryCacheCallback接口回调通知外界。
+

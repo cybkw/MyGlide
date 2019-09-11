@@ -1,0 +1,33 @@
+public class RequestManager类对象。
+管理生命周期的方式是在需要加载图片页面之上添加一个Fragment组件，用于监听Activity的生命周期。
+
+成员变量：
+String ACTIVITY_NAME = "Activity_NAME"; 表示Fragment属于android.app Fragment
+String FRAGMENT_ACTIVITY_NAME = "Fragment_Activity_NAME"; 表示Fragment属于android.support.v4.app Fragment
+int NEXT_HANDLER_MSG = 99645;  handler发送消息标识
+//RequestTargetEngine：监听生命周期LifecycleListener的实现类，以及图片加载功能类。
+static RequestTargetEngine requestTargetEngine;
+
+
+//构造方法代码块，统一实例化RequestTargetEngine
+{
+        if (null == requestTargetEngine) {
+            requestTargetEngine = new RequestTargetEngine();
+        }
+}
+
+public RequestManager(FragmentActivity fragmentActivity) 方法详解：
+创建属于android.support.v4.app 的Fragment。
+//创建完成后发送一次Handler，为了让beginTransaction操作不再排队。
+mHandler.sendEmptyMessage(NEXT_HANDLER_MSG);
+
+public RequestManager(Activity activity) 方法详解：
+创建属于android.app包下的Fragment。
+
+//因Application的生命周期无法管理，所以不做任何处理。
+public RequestManager(Context context) {
+        this.requestManagerContext = context;
+}
+
+public RequestTargetEngine load(String path)方法详解：
+将path传递给RequestTargetEngine对象用于加载图片资源。

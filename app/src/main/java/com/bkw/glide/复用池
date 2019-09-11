@@ -1,0 +1,69 @@
+如加载三张图片，就会申请三次bitmap内存空间。
+bitmap申请内存空间多次的话会造成内存抖动或者内存碎片。
+
+复用池：
+不需要多次去申请内存空间，使用可复用的Bitmap内存空间。
+每个图片bitmap都有 宽*高*每个像素点 大小（N个方块组成。
+利用Lru的方式保存。
+
+复用的标准，必须满足，才能复用，复用bitmap的内存，避免频繁申请内存空间。
+1.isMutable==true。
+2.inBitmap=bitmapPoolResult; 等于null,代表不复用。
+
+复用池和内存缓存机制，没有直接关系。
+
+复用池，只是复用bitmap的申请内存空间而已。
+
+
+public class BitmapPoolImpl extends LruCache<Integer, Bitmap> implements BitmapPool{}
+复用池实现类
+1.继承自LruCache。
+2.实现自定义BitmapPool接口，定义put(bitmap)与get(图片宽，高，图片规格BitmapConfig.ARGB_8888)方法。
+
+成员变量：
+TreeMap<Integer, Object> treeMap -存放bitmap空间的容器，为了查找时筛选出某个图片接近的可用bitmap内存空间。
+
+方法：
+@Override
+protected int sizeOf(@NonNull Integer key, @NonNull Bitmap value) 方法详解：
+计算每个加入复用池的bitmap占用内存大小。
+
+
+@Override
+public void put(Bitmap bitmap) 方法详解：
+将bitmap以占用内存大小数值存入复用池以及筛选容器TreeMap。
+存入复用池需要满足两个条件：
+1.bitmap的isMutable()==true,代表该bitmap能被外部修改，才能被复用。
+2.bitmap的占用内存空间必须小于Max_size(即定义的复用池空间限制值)。
+另外将bitmapSize存入容器，为了更好的筛选出接近可复用空间大小。
+
+@Override
+public Bitmap get(int w, int h, Bitmap.Config config) 方法详解：
+从复用池中匹配可复用的Bitmap。
+注意：只能复用内存空间，不是复用Bitmap的内容。
+
+------------以下是Bitmap配置占用字节信息----------
+Bitmap.Config 位图信息不同，占用的字节大小也不同。
+Bitmap.Config.ALPHA_8, Android自动处理，只有透明度 8位 ==1个字节。
+Bitmap.Config.RGB_565 R红色，G绿色，B蓝色 没有透明度 16位，占两个字节。
+ARGB_8888： Alpha 8位，Red 8位，G 8位，B 8位， 32位=4个字节。Android默认ARGB_8888
+常用ARGB_8888  RGB_565
+计算公式：宽度*高度*Bitmap.Config =一个完整bitmap
+
+方法内部首先计算不同Bitmap配置占用的bitmapSize，
+得出bitmapSize从容器中筛选等于或大于bitmapSize的可复用空间的key（为Integer类型）。
+判断该key如果为null,表示无可复用Bitmap，直接结束该操作。
+
+如从容器查找到可复用空间，
+判断查找到的key的大小必须小于计算的(getSize*2)的2倍。
+如满足则 bitmap =remove(key); 且return bitmap。流程完成。
+
+
+private int getBitmapSize(Bitmap bitmap) 方法详解：
+获取bitmap的大小。
+bitmap.getAllocationByteCount()或是 bitmap.getByteCount()。
+
+
+protected void entryRemoved(boolean evicted, @NonNull Integer key, @NonNull Bitmap oldValue, @Nullable Bitmap newValue)方法详解：
+元素被动移除时将key也从容器中移除。
+
